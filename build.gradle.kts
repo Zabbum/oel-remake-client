@@ -8,7 +8,7 @@ plugins {
 }
 
 dependencies {
-    implementation("com.github.Zabbum:oelrlib:0.1.27")
+    implementation("com.github.Zabbum:oelrlib:0.1.29")
     implementation("com.googlecode.lanterna:lanterna:3.2.0-alpha1")
     implementation("org.springframework.boot:spring-boot-starter-integration:3.4.0")
     implementation("org.springframework.boot:spring-boot-starter-websocket:3.4.0")

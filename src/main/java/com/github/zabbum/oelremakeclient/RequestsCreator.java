@@ -19,9 +19,10 @@ public class RequestsCreator {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        StarterRequest starterRequest = new StarterRequest();
-        starterRequest.setPlayerName(playerName);
-        starterRequest.setPlayersAmount(playersAmount);
+        StarterRequest starterRequest = StarterRequest.builder()
+                .playerName(playerName)
+                .playersAmount(playersAmount)
+                .build();
 
         HttpEntity<StarterRequest> entity = new HttpEntity<>(starterRequest, headers);
 
@@ -33,9 +34,10 @@ public class RequestsCreator {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        JoinRequest joinRequest = new JoinRequest();
-        joinRequest.setGameId(gameId);
-        joinRequest.setPlayerName(playerName);
+        JoinRequest joinRequest = JoinRequest.builder()
+                .gameId(gameId)
+                .playerName(playerName)
+                .build();
 
         HttpEntity<JoinRequest> entity = new HttpEntity<>(joinRequest, headers);
 
