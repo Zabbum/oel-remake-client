@@ -274,7 +274,7 @@ public class Game {
         for (Oilfield oilfield : baseGame.getOilfields()) {
 
             // If user is not owner of the field, move on to the next
-            if (oilfield.getOwnership() == null || oilfield.getOwnership().getPlayerId().equals(playerId)) {
+            if (oilfield.getOwnership() == null && oilfield.getOwnership().getPlayerId().equals(playerId)) {
                 continue;
             }
 
