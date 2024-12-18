@@ -5,10 +5,11 @@
 plugins {
     java
     id("io.freefair.lombok") version "8.11"
+    application
 }
 
 dependencies {
-    implementation("com.github.Zabbum:oelrlib:0.1.29")
+    implementation("com.github.Zabbum:oelrlib:0.1.31")
     implementation("com.googlecode.lanterna:lanterna:3.2.0-alpha1")
     implementation("org.springframework.boot:spring-boot-starter-integration:3.4.0")
     implementation("org.springframework.boot:spring-boot-starter-websocket:3.4.0")
@@ -23,10 +24,28 @@ version = "0.0.1-SNAPSHOT"
 description = "oel-remake-client"
 java.sourceCompatibility = JavaVersion.VERSION_17
 
+application {
+    mainClass = "com.github.zabbum.oelremakeclient.Application"
+}
+
 tasks.withType<JavaCompile>() {
     options.encoding = "UTF-8"
-    options.compilerArgs.add("-Xlint:unchecked")
+    options.compilerArgs.add("-Xlint:deprecation")
 }
+
+tasks.withType<Jar>() {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from(sourceSets.main.get().output)
+
+    dependsOn(configurations.runtimeClasspath)
+    from({
+        configurations.runtimeClasspath.get().filter{ it.name.endsWith("jar")}.map { zipTree(it) }
+    })
+    manifest {
+        attributes["Main-Class"] = application.mainClass
+    }
+}
+
 
 tasks.withType<Javadoc>() {
     options.encoding = "UTF-8"

@@ -3,7 +3,6 @@ package com.github.zabbum.oelremakeclient;
 import com.googlecode.lanterna.gui2.SeparateTextGUIThread;
 import com.googlecode.lanterna.screen.Screen;
 import lombok.extern.slf4j.Slf4j;
-
 import java.awt.*;
 import java.io.IOException;
 
