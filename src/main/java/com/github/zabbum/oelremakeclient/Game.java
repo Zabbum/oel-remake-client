@@ -268,14 +268,13 @@ public class Game {
     }
 
     private void summaryMenu() throws InterruptedException {
-        Player player = baseGame.getPlayers().get(playerId);
         Map<Integer, Integer> oilfieldsOilAmountSold = new HashMap<>();
 
         // Oilfields overview
         for (Oilfield oilfield : baseGame.getOilfields()) {
 
             // If user is not owner of the field, move on to the next
-            if (oilfield.getOwnership() == null || oilfield.getOwnership().equals(player)) {
+            if (oilfield.getOwnership() == null || oilfield.getOwnership().getPlayerId().equals(playerId)) {
                 continue;
             }
 
