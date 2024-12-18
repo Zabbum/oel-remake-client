@@ -275,7 +275,7 @@ public class Game {
         for (Oilfield oilfield : baseGame.getOilfields()) {
 
             // If user is not owner of the field, move on to the next
-            if (!oilfield.getOwnership().equals(player)) {
+            if (oilfield.getOwnership() == null || oilfield.getOwnership().equals(player)) {
                 continue;
             }
 
@@ -913,7 +913,6 @@ public class Game {
 
             // Wait for selection
             tmpConfirm.waitForConfirm();
-            tmpConfirm = null;
             oilfieldsTable.setEnabled(false);
             int selectedOilfieldIndex = Integer.parseInt(
                     oilfieldsTable.getTableModel().getRow(oilfieldsTable.getSelectedRow()).get(0))
