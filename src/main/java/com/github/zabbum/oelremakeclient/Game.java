@@ -1,5 +1,7 @@
 package com.github.zabbum.oelremakeclient;
 
+import com.github.zabbum.oelremakeclient.arguments.Arguments;
+import com.github.zabbum.oelremakeclient.arguments.CliArgumentsParser;
 import com.github.zabbum.oelremakeclient.artloader.ArtObject;
 import com.github.zabbum.oelrlib.Player;
 import com.github.zabbum.oelrlib.game.BaseGame;
@@ -45,18 +47,18 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Pattern;
 
 @Slf4j
-@Getter
 public class Game {
-    private static final String WS_ENDPOINT_URL = "ws://localhost:8080/base-game";
-    private static final String HTTP_ENDPOINT_URL = "http://localhost:8080/baseGame";
     private static final float FONT_SIZE = 15.0f;
     private static final int TERMINAL_WIDTH = 60;
     private static final int TERMINAL_HEIGHT = 34;
 
-    private final Map<String, String> argsMap;
+    private final Arguments arguments;
+    private final String wsEndpointUrl;
+    private final String httpEndpointUrl;
+    @Getter
     private GameProperties gameProperties;
     private Font font;
-    private Terminal terminal;
+    @Getter
     private Screen screen;
     private Window window;
     private MultiWindowTextGUI gui;
@@ -68,10 +70,12 @@ public class Game {
     private final Display display = new Display();
     private Map<String, String> langMap;
     private OelRequest oelRequest;
-    private boolean devMode;
 
     public Game(String[] args) throws IOException, FontFormatException {
-        this.argsMap = CliArgumentsParser.parseArguments(args);
+        this.arguments = CliArgumentsParser.parseArguments(args);
+
+        wsEndpointUrl = "ws://"+arguments.getServerAddress()+"/base-game";
+        httpEndpointUrl = "http://"+arguments.getServerAddress()+"/baseGame";
 
         setUp();
     }
@@ -80,23 +84,16 @@ public class Game {
         // Create gameProperties
         gameProperties = new GameProperties();
 
-        devMode = Objects.equals(argsMap.get("devmode"), "devmode");
-
         setLanguage();
         setFont();
         configTerminal();
         createGUI();
 
-        requestsCreator = new RequestsCreator(WS_ENDPOINT_URL, HTTP_ENDPOINT_URL);
+        requestsCreator = new RequestsCreator(wsEndpointUrl, httpEndpointUrl);
     }
 
     private void setLanguage() throws IOException {
-        String langCode;
-        if (argsMap.get("lang") != null) {
-            langCode = argsMap.get("lang");
-        } else {
-            langCode = "pl-PL";
-        }
+        String langCode = arguments.getLang();
 
         InputStream inputStream = Application.class.getClassLoader()
                 .getResourceAsStream("lang/" + langCode + ".json");
@@ -118,7 +115,7 @@ public class Game {
 
     private void configTerminal() throws IOException {
         // Create terminal
-        terminal = new DefaultTerminalFactory()
+        Terminal terminal = new DefaultTerminalFactory()
                 .setInitialTerminalSize(new TerminalSize(TERMINAL_WIDTH, TERMINAL_HEIGHT))
                 .setTerminalEmulatorFontConfiguration(SwingTerminalFontConfiguration.newInstance(font))
                 .setTerminalEmulatorTitle(gameProperties.getLangMap().get("windowTitle"))
@@ -192,7 +189,7 @@ public class Game {
 
     public void start() throws InterruptedException {
         // Display oel logo
-        if (!devMode)
+        if (!arguments.getDevMode())
             display.oelLogo();
 
         // Prompt for should new game be created
@@ -246,7 +243,7 @@ public class Game {
         BlockingQueue<BaseGame> gamesQueue = new LinkedBlockingQueue<>();
         StompSessionHandler sessionHandler = new WaitStompSessionHandler(gamesQueue, baseGame);
 
-        stompClient.connectAsync(WS_ENDPOINT_URL, sessionHandler);
+        stompClient.connectAsync(wsEndpointUrl, sessionHandler);
 
         while (true) {
             try {
