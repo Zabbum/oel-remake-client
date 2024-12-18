@@ -38,10 +38,8 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Arrays;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.regex.Pattern;
@@ -66,7 +64,6 @@ public class Game {
     private RequestsCreator requestsCreator;
     private BaseGame baseGame;
     private int playerId;
-    private Player player;
     private final Display display = new Display();
     private Map<String, String> langMap;
     private OelRequest oelRequest;
@@ -74,8 +71,8 @@ public class Game {
     public Game(String[] args) throws IOException, FontFormatException {
         this.arguments = CliArgumentsParser.parseArguments(args);
 
-        wsEndpointUrl = "ws://"+arguments.getServerAddress()+"/base-game";
-        httpEndpointUrl = "http://"+arguments.getServerAddress()+"/baseGame";
+        wsEndpointUrl = "ws://" + arguments.getServerAddress() + "/base-game";
+        httpEndpointUrl = "http://" + arguments.getServerAddress() + "/baseGame";
 
         setUp();
     }
@@ -222,12 +219,16 @@ public class Game {
             // Waiting menu
             waitingMenu();
 
-            // Main menu
-            mainMenu();
+            if (baseGame.getIsTurnSummary()) {
+                // Summary menu
+                summaryMenu();
+            } else {
+                // Main menu
+                mainMenu();
+            }
         }
         while (!baseGame.getGameStatus().equals(GameStatus.FINISHED));
 
-        // TODO: Waiting and main menu loop
     }
 
     /**
@@ -254,7 +255,7 @@ public class Game {
                 baseGame = response;
                 display.waitingMenu();
 
-                if (baseGame.getCurrentPlayerTurn() == playerId)
+                if (baseGame.getCurrentPlayerTurn() == playerId || baseGame.getIsTurnSummary())
                     break;
             } catch (InterruptedException e) {
                 log.error("Thread interrupted while waiting for messages.");
@@ -266,9 +267,40 @@ public class Game {
         }
     }
 
+    private void summaryMenu() throws InterruptedException {
+        Player player = baseGame.getPlayers().get(playerId);
+        Map<Integer, Integer> oilfieldsOilAmountSold = new HashMap<>();
+
+        // Oilfields overview
+        for (Oilfield oilfield : baseGame.getOilfields()) {
+
+            // If user is not owner of the field, move on to the next
+            if (!oilfield.getOwnership().equals(player)) {
+                continue;
+            }
+
+            // If oilfield is able to pump oil
+            if (oilfield.isExploitable() && !oilfield.getShouldInfoPlayer()) {
+                oilfieldsOilAmountSold.put(oilfield.getPlantId(), display.oilfieldManagementMenu(oilfield));
+                continue;
+            }
+
+            // If oilfield is not able to pump oil
+            display.drillingMenu(oilfield);
+        }
+
+        oelRequest = SummaryRequest.builder()
+                .gameId(baseGame.getGameId())
+                .playerId(playerId)
+                .oilfieldsOilAmountSold(oilfieldsOilAmountSold)
+                .build();
+
+        requestsCreator.oelRequest(oelRequest);
+    }
+
     // main menu with interactions
     private void mainMenu() throws InterruptedException {
-        player = baseGame.getPlayers().get(playerId);
+        Player player = baseGame.getPlayers().get(playerId);
 
         MenuResponse menuAction;
 
@@ -376,7 +408,6 @@ public class Game {
         // If something went wrong, log error and return
         if (!menuAction.equals(MenuResponse.SUCCESS)) {
             log.error("Menu action code: {}", menuAction);
-            menuAction = MenuResponse.PASS;
             oelRequest = PassRequest.builder()
                     .gameId(baseGame.getGameId())
                     .playerId(playerId)
@@ -552,6 +583,245 @@ public class Game {
      */
     private class Display {
 
+        public void drillingMenu(Oilfield oilfield) throws InterruptedException {
+            contentPanel.removeAllComponents();
+            contentPanel.setLayoutManager(new GridLayout(1));
+            window.setTheme(
+                    SimpleTheme.makeTheme(
+                            false,
+                            TextColor.ANSI.GREEN, TextColor.ANSI.WHITE_BRIGHT,
+                            TextColor.ANSI.WHITE_BRIGHT, TextColor.ANSI.GREEN,
+                            TextColor.ANSI.CYAN, TextColor.ANSI.BLUE_BRIGHT,
+                            TextColor.ANSI.WHITE_BRIGHT));
+
+            // Inform user about status
+            Panel headerPanel = new Panel(new GridLayout(2));
+            try {
+                // Get drill ASCII art
+                InputStream drillArtInputStream =
+                        Application.class.getClassLoader().getResourceAsStream("arts/drill.json");
+                headerPanel.addComponent(new ArtObject(drillArtInputStream).getImageComponent());
+            } catch (Exception e) {
+                System.out.println(e.getMessage());
+            }
+
+            Panel textPanel = new Panel(new GridLayout(1));
+
+            textPanel.addComponent(
+                    new Label(langMap.get("drillingOn") + ":")
+                            .setTheme(new SimpleTheme(TextColor.ANSI.RED, TextColor.ANSI.WHITE_BRIGHT)));
+
+            textPanel.addComponent(
+                    new Label(oilfield.getName())
+                            .setTheme(new SimpleTheme(TextColor.ANSI.GREEN_BRIGHT, TextColor.ANSI.WHITE_BRIGHT)));
+
+            textPanel.addComponent(new EmptySpace());
+
+            textPanel.addComponent(
+                    new Panel(new GridLayout(2))
+                            .addComponent(
+                                    new Label(langMap.get("property") + ": ")
+                                            .setTheme(
+                                                    new SimpleTheme(TextColor.ANSI.BLUE_BRIGHT, TextColor.ANSI.WHITE_BRIGHT)))
+                            .addComponent(
+                                    new Label(baseGame.getPlayers().get(playerId).getName())
+                                            .setTheme(new SimpleTheme(TextColor.ANSI.BLACK, TextColor.ANSI.WHITE_BRIGHT))));
+
+            headerPanel.addComponent(textPanel);
+            contentPanel.addComponent(headerPanel);
+
+            contentPanel.addComponent(new EmptySpace());
+
+            contentPanel.addComponent(
+                    new Label(langMap.get("yourPeopleFromOilfield"))
+                            .setTheme(new SimpleTheme(TextColor.ANSI.BLACK, TextColor.ANSI.WHITE_BRIGHT)));
+            contentPanel.addComponent(
+                    new Label(langMap.get("areReporting"))
+                            .setTheme(new SimpleTheme(TextColor.ANSI.BLACK, TextColor.ANSI.WHITE_BRIGHT)));
+
+            contentPanel.addComponent(new EmptySpace());
+
+            // If no drills, inform player
+            if (oilfield.getDrillsAmount() <= 0) {
+                contentPanel.addComponent(
+                        new Label(langMap.get("drillingImpossible"))
+                                .setTheme(new SimpleTheme(TextColor.ANSI.RED, TextColor.ANSI.WHITE_BRIGHT)));
+                contentPanel.addComponent(
+                        new Label(" " + langMap.get("youNeedToDoSomething"))
+                                .setTheme(new SimpleTheme(TextColor.ANSI.RED, TextColor.ANSI.WHITE_BRIGHT)));
+                contentPanel.addComponent(new EmptySpace());
+            }
+
+            // In both cases, inform about current progess
+            contentPanel.addComponent(
+                    new Label(
+                            langMap.get("currentDepth") + ": " + oilfield.getCurrentDepth() + "M"));
+            contentPanel.addComponent(new EmptySpace());
+            contentPanel.addComponent(
+                    new Label(
+                            langMap.get("canDrillFor") + ": " + oilfield.getDrillsAmount() + "M"));
+            contentPanel.addComponent(new EmptySpace());
+
+            // If reached the point that makes it available to extract oil,
+            // display info
+            if (oilfield.getCurrentDepth() >= oilfield.getRequiredDepth()) {
+                contentPanel.addComponent(new Label(langMap.get("gushed")));
+                contentPanel.addComponent(new EmptySpace());
+            }
+
+            // Button for confirmation
+            Confirm tmpConfirm = new Confirm();
+            Button confirmButton = Elements.confirmButton(tmpConfirm, langMap.get("done"));
+            contentPanel.addComponent(confirmButton);
+            confirmButton.takeFocus();
+
+            // Wait for confirmation
+            tmpConfirm.waitForConfirm();
+        }
+
+        public Integer oilfieldManagementMenu(Oilfield oilfield) throws InterruptedException {
+            // Prepare graphical settings
+            contentPanel.removeAllComponents();
+            contentPanel.setLayoutManager(new GridLayout(1));
+            window.setTheme(
+                    SimpleTheme.makeTheme(
+                            false,
+                            TextColor.ANSI.BLACK,
+                            TextColor.ANSI.YELLOW,
+                            TextColor.ANSI.YELLOW,
+                            TextColor.ANSI.BLACK,
+                            TextColor.ANSI.CYAN,
+                            TextColor.ANSI.BLUE_BRIGHT,
+                            TextColor.ANSI.YELLOW));
+
+            // Inform user
+            Panel headerPanel = new Panel(new GridLayout(2));
+            Panel imagePanel = new Panel(new GridLayout(2));
+            Panel oilfieldInfoPanel = new Panel(new GridLayout(1));
+
+            // Display ASCII arts
+            try {
+                // Get ASCII arts
+                InputStream pumpjackArtInputStream =
+                        Application.class.getClassLoader().getResourceAsStream("arts/pumpjack.json");
+                InputStream truckArtInputStream =
+                        Application.class.getClassLoader().getResourceAsStream("arts/truck.json");
+
+                imagePanel.addComponent(new ArtObject(pumpjackArtInputStream).getImageComponent());
+                imagePanel.addComponent(new ArtObject(truckArtInputStream).getImageComponent());
+            } catch (Exception e) {
+                System.out.println(e.getMessage());
+            }
+
+            // Display general oilfield info
+            oilfieldInfoPanel.addComponent(
+                    new Label("  " + langMap.get("oilfield") + " : ")
+                            .setTheme(new SimpleTheme(TextColor.ANSI.YELLOW, TextColor.ANSI.BLACK)));
+            oilfieldInfoPanel.addComponent(
+                    new Label(oilfield.getName())
+                            .setTheme(new SimpleTheme(TextColor.ANSI.BLUE, TextColor.ANSI.YELLOW)));
+            oilfieldInfoPanel.addComponent(new Label("▔".repeat(17)));
+            oilfieldInfoPanel.addComponent(
+                    new Label(" " + langMap.get("oilfieldOwner") + " ")
+                            .setTheme(new SimpleTheme(TextColor.ANSI.YELLOW, TextColor.ANSI.BLACK)));
+            oilfieldInfoPanel.addComponent(new Label(baseGame.getPlayers().get(playerId).getName()));
+            oilfieldInfoPanel.addComponent(new Label("▔".repeat(17)));
+
+            headerPanel.addComponent(imagePanel);
+            headerPanel.addComponent(oilfieldInfoPanel);
+            contentPanel.addComponent(headerPanel);
+
+            contentPanel.addComponent(
+                    new Panel(new GridLayout(2))
+                            .addComponent(new Label(langMap.get("year") + ": "))
+                            .addComponent(
+                                    new Label(String.valueOf(baseGame.getCurrentRound() + 1985))
+                                            .setTheme(
+                                                    new SimpleTheme(TextColor.ANSI.WHITE_BRIGHT, TextColor.ANSI.YELLOW))));
+
+            contentPanel.addComponent(new EmptySpace());
+            contentPanel.addComponent(
+                    new Label("MI$ & RY$ & SONS -")
+                            .setTheme(new SimpleTheme(TextColor.ANSI.BLUE, TextColor.ANSI.YELLOW)));
+            contentPanel.addComponent(
+                    new Label(
+                            langMap.get("oilSellPrice")
+                                    + " = "
+                                    + baseGame.getOilPrices().get(baseGame.getCurrentRound() - 1)
+                                    + " $")
+                            .setTheme(new SimpleTheme(TextColor.ANSI.BLUE, TextColor.ANSI.YELLOW)));
+
+            contentPanel.addComponent(new EmptySpace());
+
+            contentPanel.addComponent(
+                    new Panel(new GridLayout(2))
+                            .addComponent(new Label(langMap.get("pumpAmount")))
+                            .addComponent(new Label(": " + oilfield.getPumpsAmount()))
+                            .addComponent(
+                                    new Label(langMap.get("pumpedOut"))
+                                            .setTheme(new SimpleTheme(TextColor.ANSI.GREEN_BRIGHT, TextColor.ANSI.YELLOW)))
+                            .addComponent(
+                                    new Label(": " + oilfield.getOilAvailabletoSell())
+                                            .setTheme(new SimpleTheme(TextColor.ANSI.GREEN_BRIGHT, TextColor.ANSI.YELLOW)))
+                            .addComponent(new Label(langMap.get("carsAmount")))
+                            .addComponent(new Label(": " + oilfield.getCarsAmount()))
+                            .addComponent(
+                                    new Label(langMap.get("maxExport"))
+                                            .setTheme(new SimpleTheme(TextColor.ANSI.GREEN_BRIGHT, TextColor.ANSI.YELLOW)))
+                            .addComponent(
+                                    new Label(": " + oilfield.getCarsAmount() * 7000)
+                                            .setTheme(new SimpleTheme(TextColor.ANSI.GREEN_BRIGHT, TextColor.ANSI.YELLOW)))
+                            .addComponent(new Label(langMap.get("yourBalance")))
+                            .addComponent(new Label(": " + baseGame.getPlayers().get(playerId).getBalance())));
+
+            contentPanel.addComponent(new EmptySpace());
+
+            // If oilfield is out of oil, inform user
+            if (oilfield.getOilExtracted() > oilfield.getTotalOilAmount()) {
+                contentPanel.addComponent(new Label(langMap.get("sourceExhausted")));
+                contentPanel.addComponent(new EmptySpace());
+            }
+
+            // If can sell oil
+            if (oilfield.getOilAvailabletoSell() > 0 && oilfield.getCarsAmount() > 0) {
+                // Ask for amount of oil
+                contentPanel.addComponent(new Label(langMap.get("howMuchOilAreYouSelling")));
+
+                TextBox oilAmountToSellTextBox =
+                        new TextBox().setValidationPattern(Pattern.compile("[0-9]*"));
+
+                contentPanel.addComponent(oilAmountToSellTextBox);
+                oilAmountToSellTextBox.takeFocus();
+
+                Confirm tmpConfirm = new Confirm();
+                contentPanel.addComponent(Elements.confirmButton(tmpConfirm, langMap.get("done")));
+
+                // If confirm button is pressed and choise is valid, let it be
+                do {
+                    tmpConfirm.waitForConfirm();
+                    tmpConfirm.setConfirmStatus(false);
+                } while (!(SimpleLogic.isValid(
+                        oilAmountToSellTextBox.getText(),
+                        0,
+                        new int[]{oilfield.getCarsAmount() * 7000, oilfield.getOilAvailabletoSell()})));
+
+                return Integer.parseInt(oilAmountToSellTextBox.getText());
+            }
+
+            // If cannot sell oil
+            else {
+                Confirm tmpConfirm = new Confirm();
+
+                Button confirmButton = Elements.confirmButton(tmpConfirm, langMap.get("done"));
+                contentPanel.addComponent(confirmButton);
+                confirmButton.takeFocus();
+
+                // Wait for confirmation
+                tmpConfirm.waitForConfirm();
+                return null;
+            }
+        }
+
         public MenuResponse buyOilfieldMenu() throws InterruptedException {
             contentPanel.removeAllComponents();
             contentPanel.setLayoutManager(new GridLayout(1));
@@ -576,7 +846,7 @@ public class Game {
                     new Label(
                             langMap.get("balance2")
                                     + ": "
-                                    + String.valueOf(player.getBalance())
+                                    + String.valueOf(baseGame.getPlayers().get(playerId).getBalance())
                                     + "$"));
             titlePanel.addComponent(new EmptySpace());
             contentPanel.addComponent(titlePanel);
@@ -694,7 +964,7 @@ public class Game {
                     new Label(
                             langMap.get("balance2")
                                     + ": "
-                                    + player.getBalance()
+                                    + baseGame.getPlayers().get(playerId).getBalance()
                                     + "$"));
             titlePanel.addComponent(new EmptySpace());
             contentPanel.addComponent(titlePanel);
@@ -873,7 +1143,7 @@ public class Game {
                     new Label(
                             langMap.get("balance2")
                                     + ": "
-                                    + player.getBalance()
+                                    + baseGame.getPlayers().get(playerId).getBalance()
                                     + "$"));
             titlePanel.addComponent(new EmptySpace());
             contentPanel.addComponent(titlePanel);
@@ -1007,9 +1277,9 @@ public class Game {
                     new Label(
                             gameProperties.getLangMap().get("player").toUpperCase()
                                     + ": "
-                                    + player.getName()
+                                    + baseGame.getPlayers().get(playerId).getName()
                                     + " $= "
-                                    + player.getBalance())
+                                    + baseGame.getPlayers().get(playerId).getBalance())
                             .setTheme(new SimpleTheme(TextColor.ANSI.CYAN_BRIGHT, TextColor.ANSI.MAGENTA)));
 
             contentPanel.addComponent(new EmptySpace());
@@ -1111,18 +1381,15 @@ public class Game {
             window.setTheme(
                     SimpleTheme.makeTheme(
                             false,
-                            TextColor.ANSI.BLUE_BRIGHT,
-                            TextColor.ANSI.RED,
-                            TextColor.ANSI.RED,
-                            TextColor.ANSI.BLUE_BRIGHT,
-                            TextColor.ANSI.WHITE_BRIGHT,
-                            TextColor.ANSI.CYAN,
-                            TextColor.ANSI.RED));
+                            TextColor.ANSI.BLACK, TextColor.ANSI.WHITE_BRIGHT,
+                            TextColor.ANSI.WHITE_BRIGHT, TextColor.ANSI.BLACK,
+                            TextColor.ANSI.WHITE_BRIGHT, TextColor.ANSI.CYAN,
+                            TextColor.ANSI.WHITE_BRIGHT));
 
             contentPanel.addComponent(new EmptySpace());
             contentPanel.addComponent(new Label("ID: " + baseGame.getGameId()));
             if (baseGame.getGameStatus().equals(GameStatus.IN_PROGRESS)) {
-                contentPanel.addComponent(new Label("CZEKANIE NA TURE"));
+                contentPanel.addComponent(new Label("CZEKANIE NA TURE.  ROK: " + baseGame.getCurrentRound() + 1985));
             } else {
                 contentPanel.addComponent(new Label("CZEKANIE NA GRACZY."));
             }
